@@ -34,7 +34,10 @@ export async function request(url: string, init?: RequestInit): Promise<HttpResp
   const { status } = response;
 
   if (status === 401) {
-    throw new AuthError(status);
+    // Keep the body: Google puts the actual reason there (expired token,
+    // wrong audience, disabled API...). Without it every 401 looks the same.
+    const body = await response.text().catch(() => "");
+    throw new AuthError(status, body);
   }
 
   if (status === 403) {

@@ -41,6 +41,10 @@ export interface MutateArgs {
   /** Path after `customers/{id}/`, e.g. `campaigns:mutate`. */
   endpoint: string;
   operations: object[];
+  /** Endpoints that take a single `operation` instead of an `operations` array. */
+  singleOperation?: boolean;
+  /** Body key for the operations array: `googleAds:mutate` takes `mutateOperations`. */
+  operationsKey?: string;
   /** Shown in the dry-run preview. */
   target: object;
   change: object;
@@ -101,8 +105,9 @@ export async function runMutation(args: MutateArgs): Promise<McpText> {
       method: "POST",
       path: `customers/${customerId}/${args.endpoint}`,
       body: {
-        operations: args.operations,
-        partialFailure: false,
+        ...(args.singleOperation
+          ? { operation: args.operations[0] }
+          : { [args.operationsKey ?? "operations"]: args.operations, partialFailure: false }),
         ...(args.validate_only ? { validateOnly: true } : {}),
       },
       ...(args.loginCustomerId !== undefined

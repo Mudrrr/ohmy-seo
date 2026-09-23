@@ -69,7 +69,6 @@ MCP-сервер для Google Ads API. Бинарь `mcp-google-ads`, API v25, 
 | `MCP_GOOGLE_ADS_MASTER_KEY` | 64 hex-символа, шифрование токенов |
 | `MCP_YANDEX_SEO_MASTER_KEY` | то же значение — ядро шифрует ключом с зашитым именем, см. ниже |
 | `MCP_GOOGLE_ADS_DB_PATH` | абсолютный путь к `state.db` |
-| `GOOGLE_ADS_DEVELOPER_TOKEN` | токен из Центра API Google Рекламы |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | MCC без дефисов |
 | `GOOGLE_ADS_ALLOW_LIVE_MUTATIONS` | `false` по умолчанию |
 | `MCP_GOOGLE_ADS_CACHE_TTL_META` / `_REPORT` | 86400 / 3600 |
@@ -85,7 +84,6 @@ MCP-сервер для Google Ads API. Бинарь `mcp-google-ads`, API v25, 
 ## Скрипты
 
 ```
-npx tsx scripts/import-existing-token.ts   # перенести уже выданный refresh token
 npx tsx scripts/smoke-live.ts              # живая проверка на боевых аккаунтах
 npx tsx scripts/test-json-safe.ts          # регрессия на длинные дроби
 node scripts/install-into-claude.mjs       # прописать сервер в Claude Desktop

@@ -19,18 +19,6 @@ const PKG_NAME = "google-ads";
 // Env
 // ---------------------------------------------------------------------------
 
-/** Developer token from env. Throws with an actionable message when absent. */
-export function developerToken(): string {
-  const token = (process.env["GOOGLE_ADS_DEVELOPER_TOKEN"] ?? "").trim();
-  if (!token) {
-    throw new Error(
-      "GOOGLE_ADS_DEVELOPER_TOKEN is not set. Take it from Google Ads " +
-        "manager account -> Tools -> API Center and put it into packages/google-ads/.env",
-    );
-  }
-  return token;
-}
-
 /** Manager account id used as login-customer-id fallback. Digits only. */
 export function envLoginCustomerId(): string | undefined {
   const raw = (process.env["GOOGLE_ADS_LOGIN_CUSTOMER_ID"] ?? "").trim();
@@ -55,14 +43,14 @@ export function digitsOnly(value: string | number): string {
 const ERROR_HINTS: Array<[string, string]> = [
   ["CUSTOMER_NOT_ENABLED", "Аккаунт деактивирован или ещё не активирован — это не проблема доступа."],
   ["USER_PERMISSION_DENIED", "Нет доступа к аккаунту. Проверьте привязку к MCC или передайте login_customer_id."],
-  ["DEVELOPER_TOKEN_NOT_APPROVED", "Токен разработчика не одобрен для боевых аккаунтов — нужен Basic access."],
-  ["INVALID_DEVELOPER_TOKEN", "Неверный developer token. Сверьте значение в Центре API."],
+  ["DEVELOPER_TOKEN_NOT_APPROVED", "Уровень доступа Cloud-проекта не пускает к боевым аккаунтам. Проверьте Google Ads API -> Overview в Cloud Console."],
+  ["CLOUD_PROJECT_NOT_UNDER_ORGANIZATION", "Cloud-проект не в организации — уровень доступа наследуется от неё."],
   ["UNRECOGNIZED_FIELD", "Поле не существует в этом ресурсе. Вызовите ads_resource_metadata."],
   ["EXPECTED_REFERENCED_FIELD_IN_SELECT_CLAUSE", "Ресурс требует своё primary-поле в SELECT (например search_term_view.search_term)."],
   ["PROHIBITED_METRIC_IN_SELECT_OR_WHERE_CLAUSE", "Эта метрика несовместима с выбранным ресурсом."],
   ["DATE_RANGE_TOO_WIDE", "Слишком широкий период — сузьте диапазон дат."],
   ["REQUESTED_METRICS_FOR_MANAGER", "Метрики нельзя запрашивать у управляющего аккаунта, только у клиентского."],
-  ["RESOURCE_EXHAUSTED", "Исчерпана квота операций. Explorer — 2880 операций в сутки."],
+  ["RESOURCE_EXHAUSTED", "Исчерпана суточная квота операций Cloud-проекта. Explorer — 2880 операций в сутки на боевые аккаунты, Basic — 15 000."],
 ];
 
 export interface AdsFailure {
@@ -195,6 +183,45 @@ export interface AdsCallResult {
 }
 
 export async function executeAdsCall(params: AdsCallParams): Promise<AdsCallResult> {
+  const result = await executeAdsCallInner(params);
+  if (result.ok || result.status !== 401) return result;
+  return explainUnauthenticated(params, result);
+}
+
+/**
+ * Google answers 401 UNAUTHENTICATED not only for a bad token but also for a
+ * customer_id that does not exist / is not under the manager (seen 23.09.2026:
+ * 2200461174 instead of 1650511752). On a 401 we look the id up in the
+ * manager's customer_client tree and say so plainly if it is not there.
+ */
+async function explainUnauthenticated(params: AdsCallParams, result: AdsCallResult): Promise<AdsCallResult> {
+  const id = /^customers\/(\d+)\//.exec(params.path)?.[1];
+  const mcc = params.loginCustomerId ? digitsOnly(params.loginCustomerId) : envLoginCustomerId();
+  if (!id || !mcc || id === mcc) return result;
+  try {
+    const check = await callOnce(
+      {
+        account: params.account,
+        method: "POST",
+        path: `customers/${mcc}/googleAds:search`,
+        body: { query: `SELECT customer_client.id FROM customer_client WHERE customer_client.id = ${id}` },
+      },
+      mcc,
+    );
+    if (!check.ok) return result; // token itself is broken — nothing more to say
+    const found = ((check.data as { results?: unknown[] }).results ?? []).length > 0;
+    const data = result.data as AdsErrorPayload & { hints?: string[] };
+    const hint = found
+      ? `customer_id ${id} есть под управляющим ${mcc}, а токен с управляющим работает — проблема не в id.`
+      : `customer_id ${id} НЕ найден под управляющим ${mcc}, при этом токен рабочий. ` +
+        "Скорее всего опечатка в id — сверьте с ads_list_accessible_customers. Переавторизация не поможет.";
+    return { ...result, data: { ...data, customer_id_check: found ? "found" : "not_found", hints: found ? [hint, ...(data.hints ?? [])] : [hint] } };
+  } catch {
+    return result;
+  }
+}
+
+async function executeAdsCallInner(params: AdsCallParams): Promise<AdsCallResult> {
   const explicit = params.loginCustomerId ? digitsOnly(params.loginCustomerId) : undefined;
   const fallback = params.managerFallback === false ? undefined : envLoginCustomerId();
 
@@ -249,7 +276,6 @@ async function callOnce(
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
-    "developer-token": developerToken(),
     "Content-Type": "application/json",
   };
   if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
@@ -290,15 +316,21 @@ async function callOnce(
 
 function failure(err: unknown, loginCustomerId: string | undefined): AdsCallResult {
   if (err instanceof AuthError) {
+    // Google's own reason lives in the body — show it instead of guessing.
+    const parsed = err.body ? parseAdsError(err.status, err.body) : undefined;
     return {
       ok: false,
       status: err.status,
       data: {
-        status: err.status,
+        ...(parsed ?? { status: err.status, errors: [] }),
         google_status: "UNAUTHENTICATED",
-        errors: [],
-        hints: ["Токен доступа отвергнут. Пройдите start_google_oauth_flow заново."],
-      } satisfies AdsErrorPayload,
+        ...(err.body ? { raw_body: err.body.slice(0, 2000) } : {}),
+        hints: [
+          ...(parsed?.hints ?? []),
+          "Google отверг токен. Причина — в message / errors / raw_body выше. " +
+            "Для сервисного аккаунта (ads-mcp-sa) OAuth-flow не нужен; он нужен только для аккаунта типа oauth_user.",
+        ],
+      } as AdsErrorPayload,
     };
   }
   if (err instanceof ApiError) {
@@ -316,7 +348,7 @@ function failure(err: unknown, loginCustomerId: string | undefined): AdsCallResu
       data: {
         status: 429,
         errors: [],
-        hints: ["Квота исчерпана даже после повтора. Explorer — 2880 операций в сутки."],
+        hints: ["Квота исчерпана даже после повтора. Лимит Cloud-проекта: Explorer — 2880, Basic — 15 000 операций в сутки."],
       } satisfies AdsErrorPayload,
     };
   }

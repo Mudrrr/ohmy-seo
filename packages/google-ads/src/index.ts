@@ -16,7 +16,6 @@ import { runRegisterGoogleOauthApp } from "./tools/register-google-oauth-app.js"
 import { runDeleteGoogleOauthApp } from "./tools/delete-google-oauth-app.js";
 import { runListGoogleAccounts } from "./tools/list-google-accounts.js";
 import { runStartGoogleOauthFlow } from "./tools/start-google-oauth-flow.js";
-import { runCompleteGoogleOauthFlow } from "./tools/complete-google-oauth-flow.js";
 import { runDeleteGoogleAccount } from "./tools/delete-google-account.js";
 import { runSetDefaultGoogleAccount } from "./tools/set-default-google-account.js";
 import { runRegisterServiceAccount } from "./tools/register-google-service-account.js";
@@ -38,6 +37,7 @@ import { runAdsRecommendations } from "./tools/ads-recommendations.js";
 import { runAdsResourceMetadata } from "./tools/ads-resource-metadata.js";
 import { runAdsCreateCampaignBudget } from "./tools/ads-create-campaign-budget.js";
 import { runAdsCreateCampaign } from "./tools/ads-create-campaign.js";
+import { runAdsCreatePmax } from "./tools/ads-create-pmax.js";
 import { runAdsAddCampaignCriteria } from "./tools/ads-add-campaign-criteria.js";
 import { runAdsCreateAdGroup } from "./tools/ads-create-ad-group.js";
 import { runAdsAddKeywords } from "./tools/ads-add-keywords.js";
@@ -57,6 +57,8 @@ import { runAdsUpdateAdGroup } from "./tools/ads-update-ad-group.js";
 import { runAdsUpdateCampaign } from "./tools/ads-update-campaign.js";
 import { runAdsListSharedSets } from "./tools/ads-list-shared-sets.js";
 import { runAdsAttachSharedSet } from "./tools/ads-attach-shared-set.js";
+import { runAdsInviteClientAccount } from "./tools/ads-invite-client-account.js";
+import { runAdsKeywordIdeas } from "./tools/ads-keyword-ideas.js";
 import { runAdsDetachSharedSet } from "./tools/ads-detach-shared-set.js";
 
 
@@ -79,6 +81,7 @@ registerCacheableTool("ads_campaign_performance_report", RPT);
 registerCacheableTool("ads_change_history", RPT);
 registerCacheableTool("ads_recommendations", RPT);
 registerCacheableTool("ads_list_shared_sets", RPT);
+registerCacheableTool("ads_keyword_ideas", RPT);
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
@@ -126,11 +129,6 @@ function validateRequiredEnv(): void {
     console.error("FATAL: " + (err as Error).message);
     process.exit(1);
   }
-  if (!(process.env["GOOGLE_ADS_DEVELOPER_TOKEN"] ?? "").trim()) {
-    console.error(
-      "WARN: GOOGLE_ADS_DEVELOPER_TOKEN is not set — every Ads call will fail until it is.",
-    );
-  }
 }
 
 const LBL = z
@@ -162,7 +160,7 @@ const VALIDATE = z
   .optional()
   .describe("Ask Google to validate the operation without writing");
 
-// --- OAuth management (9) ---------------------------------------------------
+// --- OAuth management (8) ---------------------------------------------------
 
 reg("list_google_oauth_apps",
   { title: "Google OAuth — List Apps",
@@ -204,16 +202,6 @@ reg("start_google_oauth_flow",
     }, annotations: RO },
   async (args) => runStartGoogleOauthFlow(args));
 
-reg("complete_google_oauth_flow",
-  { title: "Google OAuth — Complete Flow (Deprecated)",
-    description: "Deprecated — OOB OAuth was removed by Google in 2023. Use start_google_oauth_flow.",
-    inputSchema: {
-      app_label: LBL, account_label: LBL,
-      code: z.string().min(1).describe("Auth code (OOB, deprecated)"),
-      state: z.string().min(1).describe("State from start flow"),
-    }, annotations: RO },
-  async (args) => runCompleteGoogleOauthFlow(args));
-
 reg("delete_google_account",
   { title: "Google OAuth — Delete Account",
     description: "Delete a connected Google account, permanently removing its encrypted tokens.",
@@ -236,7 +224,7 @@ reg("register_google_service_account",
     }, annotations: RO },
   async (args) => runRegisterServiceAccount(args));
 
-// --- Read (8) ---------------------------------------------------------------
+// --- Read (9) ---------------------------------------------------------------
 
 reg("ads_list_accessible_customers",
   { title: "Ads — List Accounts",
@@ -337,6 +325,7 @@ reg("ads_resource_metadata",
     inputSchema: {
       account: ACCT, customer_id: CID,
       resource: z.string().min(2).describe("Resource name, e.g. campaign, search_term_view, keyword_view"),
+      section: z.string().optional().describe("attributes | enums | metrics | segments. Default: all; for big resources enums are omitted to fit"),
       login_customer_id: LOGIN_CID, force_refresh: FRESH,
     }, annotations: RO },
   async (args) => runAdsResourceMetadata(args));
@@ -396,7 +385,29 @@ reg("ads_recommendations",
     }, annotations: RO },
   async (args) => runAdsRecommendations(args));
 
-// --- Write, non-destructive (7) ---------------------------------------------
+reg("ads_keyword_ideas",
+  { title: "Ads — Keyword Ideas",
+    description: "Keyword research through KeywordPlanIdeaService: seed phrases, a page URL or a whole site come back as ideas with average monthly searches, competition and the top-of-page bid range in account currency. Needs Basic access — planning services are closed at Explorer. Not a GAQL resource, so ads_run_query cannot reach it. Geo and language are constant ids: find them with ads_run_query against geo_target_constant and language_constant. Cached 1 h.",
+    inputSchema: {
+      account: ACCT, customer_id: CID,
+      keywords: z.array(z.string().min(1)).optional().describe("Seed phrases"),
+      page_url: z.string().optional().describe("One landing page; with keywords becomes keywordAndUrlSeed"),
+      site_url: z.string().optional().describe("Whole site as the seed"),
+      geo_target_ids: z.array(z.string().min(1)).optional().describe("geo_target_constant ids, e.g. 2764 for Thailand"),
+      language_id: z.string().optional().describe("language_constant id, e.g. 1031 for Russian"),
+      network: z.enum(["GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"]).optional(),
+      include_adult: z.boolean().optional(),
+      include_monthly_volumes: z.boolean().optional().describe("Adds the twelve-month breakdown per keyword — verbose"),
+      limit: z.number().int().positive().optional(),
+      page_size: z.number().int().positive().optional(),
+      page_token: z.string().optional(),
+      login_customer_id: LOGIN_CID, force_refresh: FRESH,
+    }, annotations: RO },
+  async (args) => runAdsKeywordIdeas(args));
+
+
+
+// --- Write, non-destructive (9) ---------------------------------------------
 
 reg("ads_create_campaign_budget",
   { title: "Ads — Create Budget",
@@ -431,6 +442,42 @@ reg("ads_create_campaign",
       login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
     }, annotations: WRITE },
   async (args) => runAdsCreateCampaign(args));
+
+reg("ads_create_pmax",
+  { title: "Ads — Create Performance Max",
+    description: "Creates a whole Performance Max campaign in ONE atomic GoogleAds:mutate: campaign (PAUSED, Brand Guidelines on), business name and logos linked at campaign level, geo and language, one asset group (ENABLED) with texts, images and search themes. Use this instead of ads_create_campaign for PMax — Google rejects a PMax campaign created on its own (REQUIRED_BUSINESS_NAME_ASSET_NOT_LINKED / REQUIRED_LOGO_ASSET_NOT_LINKED). Texts can be new strings or existing asset ids; images and logos only as existing asset ids (find them: SELECT asset.id, asset.name, asset.type FROM asset WHERE asset.type = 'IMAGE'). Validates counts and lengths before sending. Preview unless confirm:true; test with validate_only:true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID,
+      name: z.string().min(1).max(255),
+      budget_id: z.string().min(1).describe("Non-shared budget from ads_create_campaign_budget or ads_list_budgets"),
+      bidding_strategy: z.string().optional().describe("MAXIMIZE_CONVERSIONS (default) | MAXIMIZE_CONVERSION_VALUE | TARGET_CPA | TARGET_ROAS"),
+      target_cpa: z.number().positive().optional().describe("Account currency"),
+      target_roas: z.number().positive().optional(),
+      geo_target_type: z.string().optional().describe("PRESENCE_OR_INTEREST (default) | PRESENCE"),
+      eu_political_advertising: z.boolean().optional(),
+      start_date: z.string().optional().describe("YYYY-MM-DD"),
+      end_date: z.string().optional().describe("YYYY-MM-DD"),
+      locations: z.array(z.string().min(1)).optional().describe("geo target constant ids, e.g. [\"21042\"]"),
+      languages: z.array(z.string().min(1)).optional().describe("language constant ids, e.g. [\"1000\",\"1031\"]"),
+      business_name: z.string().optional().describe("New text asset, max 25 chars — or pass business_name_asset_id"),
+      business_name_asset_id: z.string().optional(),
+      logo_asset_ids: z.array(z.string().min(1)).min(1).describe("Square 1:1 logos"),
+      landscape_logo_asset_ids: z.array(z.string().min(1)).optional().describe("4:1 logos"),
+      asset_group_name: z.string().min(1),
+      final_urls: z.array(z.string().url()).min(1),
+      headlines: z.array(z.string().min(1)).optional().describe("New texts, max 30 chars; 3–15 total with headline_asset_ids"),
+      headline_asset_ids: z.array(z.string().min(1)).optional(),
+      long_headlines: z.array(z.string().min(1)).optional().describe("New texts, max 90 chars; 1–5 total"),
+      long_headline_asset_ids: z.array(z.string().min(1)).optional(),
+      descriptions: z.array(z.string().min(1)).optional().describe("New texts, max 90 chars, one of them max 60; 2–5 total"),
+      description_asset_ids: z.array(z.string().min(1)).optional(),
+      marketing_image_asset_ids: z.array(z.string().min(1)).min(1).describe("1.91:1 images"),
+      square_marketing_image_asset_ids: z.array(z.string().min(1)).min(1).describe("1:1 images"),
+      portrait_marketing_image_asset_ids: z.array(z.string().min(1)).optional().describe("4:5 images"),
+      search_themes: z.array(z.string().min(1)).optional().describe("Asset group search themes (signals)"),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runAdsCreatePmax(args));
 
 reg("ads_add_campaign_criteria",
   { title: "Ads — Add Campaign Criteria",
@@ -543,6 +590,18 @@ reg("ads_attach_shared_set",
       login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
     }, annotations: WRITE },
   async (args) => runAdsAttachSharedSet(args));
+
+reg("ads_invite_client_account",
+  { title: "Ads — Invite Client Account to Manager",
+    description: "Invites a client account to link under a manager account (MCC). The invitation is created PENDING and nothing in the client account changes until they accept it in their own interface; once accepted, every credential that reaches the MCC — including the service account — can work with that account, so no per-client Cloud project or key is needed. Check statuses with a customer_client_link query against the manager. Preview unless confirm:true.",
+    inputSchema: {
+      account: ACCT,
+      manager_customer_id: z.string().min(1),
+      client_customer_id: z.string().min(1),
+      confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runAdsInviteClientAccount(args));
+
 
 
 // --- DANGER (7) -------------------------------------------------------------

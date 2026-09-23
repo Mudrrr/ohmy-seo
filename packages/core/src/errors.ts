@@ -1,5 +1,6 @@
 export class AuthError extends Error {
-  constructor(public status: number) {
+  /** body: raw response text, so callers can show the provider's own reason. */
+  constructor(public status: number, public body?: string) {
     super("Auth rejected");
     this.name = "AuthError";
   }
