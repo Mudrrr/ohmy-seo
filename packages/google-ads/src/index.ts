@@ -55,6 +55,12 @@ import {
 import { runAdsCreateAd } from "./tools/ads-create-ad.js";
 import { runAdsUpdateAdGroup } from "./tools/ads-update-ad-group.js";
 import { runAdsUpdateCampaign } from "./tools/ads-update-campaign.js";
+import { runAdsUpdateCampaignUrls } from "./tools/ads-update-campaign-urls.js";
+import {
+  runAddAccountNegativePlacements,
+  runListAccountNegativeCriteria,
+  runRemoveAccountNegativeCriteria,
+} from "./tools/ads-account-negative-criteria.js";
 import { runAdsListSharedSets } from "./tools/ads-list-shared-sets.js";
 import { runAdsAttachSharedSet } from "./tools/ads-attach-shared-set.js";
 import { runAdsInviteClientAccount } from "./tools/ads-invite-client-account.js";
@@ -224,7 +230,7 @@ reg("register_google_service_account",
     }, annotations: RO },
   async (args) => runRegisterServiceAccount(args));
 
-// --- Read (9) ---------------------------------------------------------------
+// --- Read (10) ---------------------------------------------------------------
 
 reg("ads_list_accessible_customers",
   { title: "Ads — List Accounts",
@@ -304,6 +310,17 @@ reg("ads_list_shared_sets",
       login_customer_id: LOGIN_CID, force_refresh: FRESH,
     }, annotations: RO },
   async (args) => runAdsListSharedSets(args));
+
+reg("ads_list_account_negative_criteria",
+  { title: "Ads — Account Exclusions",
+    description: "Account-level exclusions (customer_negative_criterion): placements, apps, YouTube, content labels, app categories. Compact: one line per exclusion \"TYPE value criterion_id\", plus counts by type. Not cached.",
+    inputSchema: {
+      account: ACCT, customer_id: CID,
+      type: z.string().optional().describe("PLACEMENT | MOBILE_APPLICATION | YOUTUBE_CHANNEL | YOUTUBE_VIDEO | CONTENT_LABEL | MOBILE_APP_CATEGORY"),
+      limit: z.number().int().positive().optional().describe("Lines to return, default 450"),
+      login_customer_id: LOGIN_CID,
+    }, annotations: RO },
+  async (args) => runListAccountNegativeCriteria(args));
 
 
 // --- GAQL and reports (7) ---------------------------------------------------
@@ -407,7 +424,7 @@ reg("ads_keyword_ideas",
 
 
 
-// --- Write, non-destructive (9) ---------------------------------------------
+// --- Write, non-destructive (11) ---------------------------------------------
 
 reg("ads_create_campaign_budget",
   { title: "Ads — Create Budget",
@@ -581,6 +598,28 @@ reg("ads_update_campaign",
     }, annotations: WRITE },
   async (args) => runAdsUpdateCampaign(args));
 
+reg("ads_update_campaign_urls",
+  { title: "Ads — Campaign Tracking URLs",
+    description: "Sets final_url_suffix and/or tracking_url_template on one campaign (UTM, ValueTrack). Only these fields go into the update mask — status and budget are never touched. Suffix is checked against Google's 128-character limit before sending; a leading ? is stripped. Empty string clears a field. Preview unless confirm:true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID, campaign_id: z.string().min(1),
+      final_url_suffix: z.string().optional().describe("e.g. utm_source=google&utm_medium=cpc&utm_campaign={campaignid}"),
+      tracking_url_template: z.string().optional().describe("Must contain {lpurl}"),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runAdsUpdateCampaignUrls(args));
+
+reg("ads_add_account_negative_placements",
+  { title: "Ads — Add Account Exclusions",
+    description: "Adds account-level exclusions (customer_negative_criterion) — they apply to every campaign in the account at once, PMax included. Negative keywords do nothing for Display placements; this does. Runs with partial_failure: existing duplicates are rejected one by one and the rest go through; the answer lists created and rejected-with-reason. Placements are normalised (scheme, trailing slash, case). Narrows reach only, so not DANGER. Preview unless confirm:true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID,
+      type: z.string().optional().describe("PLACEMENT (default) | MOBILE_APPLICATION (app id like mobileapp::2-com.example) | YOUTUBE_CHANNEL | YOUTUBE_VIDEO | CONTENT_LABEL | MOBILE_APP_CATEGORY (constant id)"),
+      values: z.array(z.string().min(1)).min(1).max(5000).describe("e.g. [\"quizwinz.com\", \"mediafire.com\"]"),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runAddAccountNegativePlacements(args));
+
 reg("ads_attach_shared_set",
   { title: "Ads — Attach Shared Negative List",
     description: "Attaches an existing shared negative keyword list to a campaign. Can only narrow matching, so no acknowledge_live needed. Get shared_set_id from ads_list_shared_sets. Preview unless confirm:true.",
@@ -604,7 +643,7 @@ reg("ads_invite_client_account",
 
 
 
-// --- DANGER (7) -------------------------------------------------------------
+// --- DANGER (8) -------------------------------------------------------------
 
 reg("ads_enable_campaign",
   { title: "Ads — Enable Campaign (DANGER)",
@@ -682,6 +721,16 @@ reg("ads_detach_shared_set",
       login_customer_id: LOGIN_CID, confirm: CONFIRM, acknowledge_live: ACK,
     }, annotations: DANGER },
   async (args) => runAdsDetachSharedSet(args));
+
+reg("ads_remove_account_negative_criteria",
+  { title: "Ads — Remove Account Exclusions (DANGER)",
+    description: "Removes account-level exclusions by criterion id (from ads_list_account_negative_criteria). Reopens that inventory for every campaign in the account at once — needs confirm:true, acknowledge_live and GOOGLE_ADS_ALLOW_LIVE_MUTATIONS=true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID,
+      criterion_ids: z.array(z.string().min(1)).min(1),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, acknowledge_live: ACK,
+    }, annotations: DANGER },
+  async (args) => runRemoveAccountNegativeCriteria(args));
 
 
 async function main(): Promise<void> {

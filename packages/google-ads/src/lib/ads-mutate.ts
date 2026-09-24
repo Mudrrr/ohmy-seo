@@ -45,6 +45,8 @@ export interface MutateArgs {
   singleOperation?: boolean;
   /** Body key for the operations array: `googleAds:mutate` takes `mutateOperations`. */
   operationsKey?: string;
+  /** Let valid operations through when some fail (e.g. duplicates in a big batch). */
+  partialFailure?: boolean;
   /** Shown in the dry-run preview. */
   target: object;
   change: object;
@@ -107,7 +109,7 @@ export async function runMutation(args: MutateArgs): Promise<McpText> {
       body: {
         ...(args.singleOperation
           ? { operation: args.operations[0] }
-          : { [args.operationsKey ?? "operations"]: args.operations, partialFailure: false }),
+          : { [args.operationsKey ?? "operations"]: args.operations, partialFailure: args.partialFailure === true }),
         ...(args.validate_only ? { validateOnly: true } : {}),
       },
       ...(args.loginCustomerId !== undefined
