@@ -614,7 +614,7 @@ reg("ads_add_account_negative_placements",
     description: "Adds account-level exclusions (customer_negative_criterion) — they apply to every campaign in the account at once, PMax included. Negative keywords do nothing for Display placements; this does. Runs with partial_failure: existing duplicates are rejected one by one and the rest go through; the answer lists created and rejected-with-reason. Placements are normalised (scheme, trailing slash, case). Narrows reach only, so not DANGER. Preview unless confirm:true.",
     inputSchema: {
       account: ACCT, customer_id: CID,
-      type: z.string().optional().describe("PLACEMENT (default) | MOBILE_APPLICATION (app id like mobileapp::2-com.example) | YOUTUBE_CHANNEL | YOUTUBE_VIDEO | CONTENT_LABEL | MOBILE_APP_CATEGORY (constant id)"),
+      type: z.string().optional().describe("PLACEMENT (default) | MOBILE_APPLICATION (app id as the list shows it: 2-com.example for Google Play, 1-123456 for App Store) | YOUTUBE_CHANNEL | YOUTUBE_VIDEO | CONTENT_LABEL | MOBILE_APP_CATEGORY (constant id)"),
       values: z.array(z.string().min(1)).min(1).max(5000).describe("e.g. [\"quizwinz.com\", \"mediafire.com\"]"),
       login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
     }, annotations: WRITE },
