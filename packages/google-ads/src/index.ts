@@ -61,6 +61,7 @@ import {
   runListAccountNegativeCriteria,
   runRemoveAccountNegativeCriteria,
 } from "./tools/ads-account-negative-criteria.js";
+import { runCreateAssets, runLinkCampaignAssets, runLinkAssetGroupAssets } from "./tools/ads-assets.js";
 import { runAdsListSharedSets } from "./tools/ads-list-shared-sets.js";
 import { runAdsAttachSharedSet } from "./tools/ads-attach-shared-set.js";
 import { runAdsInviteClientAccount } from "./tools/ads-invite-client-account.js";
@@ -424,7 +425,7 @@ reg("ads_keyword_ideas",
 
 
 
-// --- Write, non-destructive (11) ---------------------------------------------
+// --- Write, non-destructive (14) ---------------------------------------------
 
 reg("ads_create_campaign_budget",
   { title: "Ads — Create Budget",
@@ -619,6 +620,64 @@ reg("ads_add_account_negative_placements",
       login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
     }, annotations: WRITE },
   async (args) => runAddAccountNegativePlacements(args));
+
+const LINK = z.object({
+  asset_id: z.string().min(1),
+  field_type: z.string().min(1).describe("SITELINK | CALLOUT | STRUCTURED_SNIPPET | PRICE | BUSINESS_NAME | LOGO | HEADLINE | DESCRIPTION | MARKETING_IMAGE ..."),
+});
+
+reg("ads_create_assets",
+  { title: "Ads — Create Assets",
+    description: "Creates assets (AssetService, create only): text, sitelink, callout, structured_snippet, price, image. Text assets are immutable — to change one, create a new asset and relink it. Lengths are checked before sending (sitelink 25/35/35, callout 25, snippet values 25 ×3–10 with Google's fixed headers, price offerings 3–8 with header/description 25). Images are passed as a URL: downloaded, format (JPEG/PNG/GIF), ≤5 MB and aspect ratio checked (1.91:1 ≥600×314, 1:1 ≥300×300, 4:5 ≥480×600; logos via image_kind). Returns asset_id per created asset. An unlinked asset is shown nowhere. Preview unless confirm:true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID,
+      assets: z.array(z.object({
+        kind: z.string().describe("text | sitelink | callout | structured_snippet | price | image"),
+        text: z.string().optional(), role: z.string().optional().describe("text: HEADLINE (30) | LONG_HEADLINE (90) | DESCRIPTION (90) | BUSINESS_NAME (25)"),
+        link_text: z.string().optional(), description1: z.string().optional(), description2: z.string().optional(),
+        final_urls: z.array(z.string().url()).optional().describe("sitelink"),
+        callout_text: z.string().optional(),
+        header: z.string().optional().describe("structured_snippet: Amenities | Types | Neighborhoods | Models | ..."),
+        values: z.array(z.string()).optional(),
+        price_type: z.string().optional().describe("PRODUCT_TIERS | SERVICES | ..."),
+        price_qualifier: z.string().optional().describe("FROM | UP_TO | AVERAGE"),
+        language_code: z.string().optional(), currency_code: z.string().optional().describe("price: not every currency is allowed — THB is rejected (UNSUPPORTED, checked 28.09.2026), USD works"),
+        offerings: z.array(z.object({
+          header: z.string(), description: z.string(),
+          amount: z.number().positive().describe("Account currency, not micros"),
+          final_url: z.string().url(),
+        })).optional(),
+        url: z.string().url().optional().describe("image: source URL"),
+        name: z.string().optional().describe("image name, defaults to file name"),
+        image_kind: z.string().optional().describe("MARKETING_IMAGE | SQUARE_MARKETING_IMAGE | PORTRAIT_MARKETING_IMAGE | LOGO | LANDSCAPE_LOGO — default: detect by ratio"),
+      })).min(1).max(100),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runCreateAssets(args));
+
+reg("ads_link_campaign_assets",
+  { title: "Ads — Link Campaign Assets",
+    description: "Links assets to a campaign and/or unlinks them (CampaignAssetService): sitelinks, callouts, structured snippets, prices, business name, logos. Runs with partial_failure — a duplicate link is rejected alone. Does not touch budget, bids or status. Preview unless confirm:true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID, campaign_id: z.string().min(1),
+      add: z.array(LINK).optional(), remove: z.array(LINK).optional(),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runLinkCampaignAssets(args));
+
+reg("ads_link_asset_group_assets",
+  { title: "Ads — Edit PMax Asset Group",
+    description: "Adds and/or removes assets in a PMax asset group in ONE atomic request, so a swap at the limit works (5 descriptions: remove 1 + add 1). Reads the group first and checks the result against limits: headlines 3–15, long headlines 1–5, descriptions 2–5, images ≤20, videos ≤5; refuses links that already exist or are missing. add items take asset_id or text (text asset created in the same request, length checked by field_type). Preview unless confirm:true.",
+    inputSchema: {
+      account: ACCT, customer_id: CID, asset_group_id: z.string().min(1),
+      add: z.array(z.object({
+        asset_id: z.string().optional(), text: z.string().optional(),
+        field_type: z.string().min(1).describe("HEADLINE | LONG_HEADLINE | DESCRIPTION | MARKETING_IMAGE | SQUARE_MARKETING_IMAGE | PORTRAIT_MARKETING_IMAGE | YOUTUBE_VIDEO | LOGO ..."),
+      })).optional(),
+      remove: z.array(LINK).optional(),
+      login_customer_id: LOGIN_CID, confirm: CONFIRM, validate_only: VALIDATE,
+    }, annotations: WRITE },
+  async (args) => runLinkAssetGroupAssets(args));
 
 reg("ads_attach_shared_set",
   { title: "Ads — Attach Shared Negative List",
