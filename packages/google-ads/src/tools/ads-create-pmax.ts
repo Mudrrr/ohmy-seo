@@ -54,7 +54,7 @@ export interface CreatePmaxArgs {
  * linked as CampaignAsset in the same request. Switching Brand Guidelines off
  * does not help — the same requirement moves to the asset group
  * (NOT_ENOUGH_BUSINESS_NAME_ASSET / NOT_ENOUGH_LOGO_ASSET). Both verified
- * 23.09.2026 with validateOnly on 165-051-1752.
+ * 23.09.2026 with validateOnly on a test account.
  *
  * Temporary ids: campaign -1, asset group -2, new text assets -100 and down.
  * Campaign is always PAUSED; the asset group is ENABLED so the campaign runs

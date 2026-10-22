@@ -7,7 +7,7 @@
 //
 // Env:
 //   ROISTAT_API_KEY              — key from cloud.roistat.com/user/profile/api (required)
-//   ROISTAT_PROJECT_ID           — default project id, e.g. 200994 (required unless `project` passed)
+//   ROISTAT_PROJECT_ID           — default project id, e.g. 123456 (required unless `project` passed)
 //   ROISTAT_ALLOW_LIVE_MUTATIONS — set "true" to permit write-like endpoints (default: blocked)
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";

@@ -191,7 +191,7 @@ export async function executeAdsCall(params: AdsCallParams): Promise<AdsCallResu
 /**
  * Google answers 401 UNAUTHENTICATED not only for a bad token but also for a
  * customer_id that does not exist / is not under the manager (seen 23.09.2026:
- * 2200461174 instead of 1650511752). On a 401 we look the id up in the
+ * 1111111111 instead of 2222222222). On a 401 we look the id up in the
  * manager's customer_client tree and say so plainly if it is not there.
  */
 async function explainUnauthenticated(params: AdsCallParams, result: AdsCallResult): Promise<AdsCallResult> {
